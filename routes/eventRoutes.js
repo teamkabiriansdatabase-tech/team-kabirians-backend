@@ -3,6 +3,7 @@ const router = express.Router();
 
 const {
   getEvents,
+  getPublicEvents,
   getEventById,
   createEvent,
   updateEvent,
@@ -15,6 +16,7 @@ const { protect, authorize } = require('../middlewares/authMiddleware');
 
 // 1. STANDARD EVENT ROUTES
 router.get('/', getEvents);
+router.get('/public', getPublicEvents);
 router.get('/:id', getEventById);
 router.post('/', protect, authorize('admin'), createEvent);
 router.put('/:id', protect, authorize('admin'), updateEvent);

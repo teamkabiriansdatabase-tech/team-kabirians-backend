@@ -4,6 +4,71 @@ const Category = require('../models/Category');
 const Registration = require('../models/Registration');
 const Result = require('../models/Result');
 
+// Public listing deliberately exposes only editorial event fields. The regular
+// event feed remains unchanged for the existing portals.
+exports.getPublicEvents = async (_req, res) => {
+  try {
+    const events = await Event.find({ status: { $in: ['upcoming', 'live', 'closed', 'ended'] } })
+      .select('title slug description coverImageUrl ruleBookPdfUrl ruleBookText eventType eventDate standardDeadline lateFeeStartDate registrationDeadline status categories createdAt')
+      .sort({ eventDate: 1 })
+      .lean();
+
+    const ids = events.map((event) => event._id);
+    const categoryRows = ids.length
+      ? await Category.find({ eventId: { $in: ids } })
+          .select('_id eventId event')
+          .lean()
+      : [];
+    const categoryIdsByEvent = new Map();
+    const addCategory = (eventId, categoryId) => {
+      if (!eventId || !categoryId) return;
+      const key = String(eventId);
+      if (!categoryIdsByEvent.has(key)) categoryIdsByEvent.set(key, new Set());
+      categoryIdsByEvent.get(key).add(String(categoryId));
+    };
+
+    for (const category of categoryRows) {
+      addCategory(category.eventId, category._id);
+      addCategory(category.event, category._id);
+    }
+    for (const event of events) {
+      for (const category of event.categories || []) {
+        addCategory(event._id, category?._id || category);
+      }
+    }
+
+    const data = events.map((event) => {
+      // The Admin Portal's explicit status is authoritative. A past event date
+      // must not silently turn an administrator's live/open event into closed.
+      const eventEnded = event.status === 'ended';
+
+      return {
+        _id: event._id,
+        title: event.title,
+        slug: event.slug,
+        description: event.description,
+        coverImageUrl: event.coverImageUrl,
+        ruleBookPdfUrl: event.ruleBookPdfUrl,
+        ruleBookText: event.ruleBookText,
+        eventType: event.eventType,
+        eventDate: event.eventDate,
+        standardDeadline: event.standardDeadline,
+        lateFeeStartDate: event.lateFeeStartDate,
+        registrationDeadline: event.registrationDeadline,
+        status: event.status,
+        categoriesCount: categoryIdsByEvent.get(String(event._id))?.size || 0,
+        eventEnded,
+        registrationOpen: event.status === 'live' && !eventEnded,
+      };
+    });
+
+    return res.status(200).json({ success: true, count: data.length, data });
+  } catch (error) {
+    console.error('getPublicEvents Error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to load events.' });
+  }
+};
+
 // Helper: Safely extract 24-character hex ID string
 const extractIdStr = (val) => {
   if (!val) return '';
