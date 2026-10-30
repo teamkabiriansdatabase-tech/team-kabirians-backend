@@ -229,7 +229,7 @@ exports.getCategoryById = async (req, res) => {
 // 4. CREATE CATEGORY
 exports.createCategory = async (req, res) => {
   try {
-    const { eventId, name, baseFee, fee, lateFee, subcategories, subDivisions } = req.body;
+    const { eventId, name, baseFee, fee, lateFee, baseFeeUSD, lateFeeUSD, subcategories, subDivisions } = req.body;
 
     const subList = Array.isArray(subcategories || subDivisions)
       ? (subcategories || subDivisions)
@@ -244,6 +244,8 @@ exports.createCategory = async (req, res) => {
       name: String(name || 'Division').trim(),
       baseFee: Number(baseFee || fee) || 2000,
       lateFee: Number(lateFee) || 0,
+      baseFeeUSD: Number(baseFeeUSD) || 20,
+      lateFeeUSD: Number(lateFeeUSD) || 5,
       subcategories: subList.length > 0 ? subList : ['white', 'blue', 'green'],
       status: 'active',
     });

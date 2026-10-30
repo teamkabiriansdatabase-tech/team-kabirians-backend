@@ -88,35 +88,113 @@ router.post('/register', async (req, res) => {
 // ==========================================
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, phone, identifier, password } = req.body;
 
-    if (!email || !password) {
+    const loginIdentifier = String(identifier || email || phone || '').trim();
+
+    if (!loginIdentifier || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide both email and password.',
+        message: 'Please provide email or phone number and password.',
       });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    console.log(`[AUTH LOGIN] Login attempt with identifier: "${loginIdentifier}"`);
+
+    const rawInput = loginIdentifier.trim();
+    const cleanEmail = rawInput.toLowerCase();
+    const cleanDigits = rawInput.replace(/\D/g, '');
+
+    const orConditions = [
+      { email: cleanEmail },
+      { phone: rawInput },
+      { phoneNumber: rawInput },
+      { contactPhone: rawInput },
+    ];
+
+    if (cleanDigits.length >= 7) {
+      const variants = new Set([cleanDigits, rawInput]);
+
+      let core10 = '';
+      if (cleanDigits.startsWith('92') && cleanDigits.length >= 11) {
+        core10 = cleanDigits.slice(2);
+      } else if (cleanDigits.startsWith('0') && cleanDigits.length >= 10) {
+        core10 = cleanDigits.slice(1);
+      } else if (cleanDigits.length === 10) {
+        core10 = cleanDigits;
+      }
+
+      if (core10) {
+        variants.add(core10);
+        variants.add('0' + core10);
+        variants.add('92' + core10);
+        variants.add('+92' + core10);
+        variants.add('+92 ' + core10);
+        if (core10.length === 10) {
+          variants.add(`0${core10.slice(0, 3)}-${core10.slice(3)}`);
+          variants.add(`0${core10.slice(0, 3)} ${core10.slice(3)}`);
+          variants.add(`+92-${core10.slice(0, 3)}-${core10.slice(3)}`);
+          variants.add(`+92 ${core10.slice(0, 3)} ${core10.slice(3)}`);
+        }
+      }
+
+      for (const v of variants) {
+        orConditions.push({ phone: v });
+        orConditions.push({ phoneNumber: v });
+        orConditions.push({ contactPhone: v });
+      }
+
+      const numVal = Number(cleanDigits);
+      if (!isNaN(numVal)) {
+        orConditions.push({ phone: numVal });
+        orConditions.push({ phoneNumber: numVal });
+      }
+      if (core10) {
+        const coreNum = Number(core10);
+        if (!isNaN(coreNum)) {
+          orConditions.push({ phone: coreNum });
+          orConditions.push({ phoneNumber: coreNum });
+        }
+      }
+
+      const core9 = cleanDigits.slice(-9);
+      if (core9.length === 9) {
+        const looseRegex = new RegExp(core9.split('').join('\\D*'), 'i');
+        orConditions.push({ phone: looseRegex });
+        orConditions.push({ phoneNumber: looseRegex });
+        orConditions.push({ contactPhone: looseRegex });
+      }
+    }
 
     // Fetch user with password field included
-    const user = await User.findOne({ email: cleanEmail }).select('+password');
+    const user = await User.findOne({ $or: orConditions }).select('+password');
 
     if (!user) {
+      console.warn(`[AUTH LOGIN] User not found for identifier: "${loginIdentifier}"`);
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password.',
+        message: 'Invalid email/phone or password.',
       });
     }
 
-    // Use user.matchPassword method from User model
-    const isMatch = await user.matchPassword(password);
+    // Verify Password
+    let isMatch = false;
+    if (typeof user.matchPassword === 'function') {
+      isMatch = await user.matchPassword(password);
+    } else {
+      const bcrypt = require('bcryptjs');
+      isMatch = await bcrypt.compare(password, user.password);
+    }
+
     if (!isMatch) {
+      console.warn(`[AUTH LOGIN] Incorrect password for user: "${user.email || user.phone || user._id}"`);
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password.',
+        message: 'Invalid email/phone or password.',
       });
     }
+
+    console.log(`[AUTH LOGIN] Login successful for user: "${user.email || user.phone || user._id}"`);
 
     // Generate Token
     const token = jwt.sign(
