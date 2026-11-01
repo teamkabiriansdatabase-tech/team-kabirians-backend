@@ -46,14 +46,14 @@ const registrationSchema = new mongoose.Schema(
     categories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }],
 
     // Payment Details
-    paymentOption: { type: String, enum: ['full', 'half'], default: 'full' },
-    totalAmountDue: { type: Number, required: true },
+    paymentOption: { type: String, enum: ['full', 'half', 'pay_later', 'draft'], default: 'full' },
+    totalAmountDue: { type: Number, default: 0 },
     totalAmountPaid: { type: Number, default: 0 },
     remainingBalance: { type: Number, default: 0 },
 
     // Payment Slips & Proofs
-    transactionId: { type: String, required: true },
-    paymentDate: { type: Date, required: true },
+    transactionId: { type: String, default: '' },
+    paymentDate: { type: Date },
     paymentSlipUrl: { type: String },
     slipUrl: { type: String },
     receiptUrl: { type: String },
@@ -71,7 +71,7 @@ const registrationSchema = new mongoose.Schema(
 
     registrationStatus: {
       type: String,
-      enum: ['pending', 'under_review', 'pending_payment', 'approved', 'rejected'],
+      enum: ['draft', 'pending', 'under_review', 'pending_payment', 'approved', 'rejected'],
       default: 'under_review',
     },
     status: { type: String, default: 'under_review' },

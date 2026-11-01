@@ -261,6 +261,13 @@ router.post('/registrations', protect, async (req, res) => {
         ? Number(clientRemaining)
         : finalTotalDue - finalAmountPaid;
 
+    const isDraft =
+      req.body.isDraft === true ||
+      req.body.isDraft === 'true' ||
+      paymentOption === 'pay_later' ||
+      paymentOption === 'draft' ||
+      req.body.registrationStatus === 'draft';
+
     const finalSlip = paymentSlipUrl || slipUrl || req.body.paymentSlip || '';
 
     const newRegistration = await Registration.create({
@@ -280,21 +287,23 @@ router.post('/registrations', protect, async (req, res) => {
       baseAmount: Number(baseAmount) || 0,
       lateFee: Number(lateFee) || 0,
       totalAmountDue: finalTotalDue,
-      totalAmountPaid: finalAmountPaid,
-      remainingBalance: finalRemaining,
-      transactionId: transactionId || 'N/A',
-      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+      totalAmountPaid: isDraft ? 0 : finalAmountPaid,
+      remainingBalance: isDraft ? finalTotalDue : finalRemaining,
+      transactionId: transactionId || (isDraft ? 'DRAFT' : 'N/A'),
+      paymentDate: paymentDate ? new Date(paymentDate) : isDraft ? null : new Date(),
       paymentSlipUrl: finalSlip,
       slipUrl: finalSlip,
       receiptUrl: finalSlip,
       proofUrl: finalSlip,
       paymentProof: finalSlip,
       paymentSlip: finalSlip,
-      registrationStatus: 'under_review',
+      registrationStatus: isDraft ? 'draft' : 'under_review',
+      status: isDraft ? 'draft' : 'under_review',
+      paymentStatus: isDraft ? 'unpaid' : 'Pending',
     });
 
     try {
-      await Notification.create({
+      if (!isDraft) await Notification.create({
         title: 'New Team Registration',
         message: `${req.user.name || 'A team'} has registered ${sanitizedAthletes.length} athletes.`,
         type: 'registration',
@@ -309,7 +318,7 @@ router.post('/registrations', protect, async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Registration submitted successfully!',
+      message: isDraft ? 'Registration draft saved successfully! You can pay later.' : 'Registration submitted successfully!',
       data: newRegistration,
     });
   } catch (error) {
@@ -432,6 +441,131 @@ router.put('/registrations/:regId/payment-status', protect, async (req, res) => 
   } catch (error) {
     console.error('Payment update error:', error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ==========================================
+// ATTACH PAYMENT TO DRAFT (DYNAMIC LATE FEE RECALCULATION)
+// @route POST /api/v1/portal/registrations/:id/pay
+// ==========================================
+router.post('/registrations/:id/pay', protect, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const { id } = req.params;
+    const {
+      transactionId,
+      paymentDate,
+      paymentSlipUrl,
+      slipUrl,
+      paymentOption,
+    } = req.body;
+
+    const reg = await Registration.findOne({
+      _id: id,
+      $or: [
+        { userId: userId },
+        { user: userId },
+        { 'teamId.userId': userId },
+        { createdBy: userId },
+      ],
+    });
+
+    if (!reg) {
+      return res.status(404).json({ success: false, message: 'Registration record nahi mila.' });
+    }
+
+    const event = await Event.findById(reg.eventId);
+
+    // Dynamic Late Fee Calculation Rule:
+    // Even if registration was drafted during the standard deadline window,
+    // if today (payment time) >= lateFeeStartDate or > standardDeadline,
+    // late fee MUST apply!
+    let isLateNow = false;
+    if (event) {
+      if (event.isLateRegistration === true || event.isLateFeeActive === true || event.isLate === true) {
+        isLateNow = true;
+      }
+      const lateStartDateStr = event.lateRegistrationStartDate || event.lateFeeStartDate || event.lateStartDate;
+      if (lateStartDateStr) {
+        const lateStart = new Date(lateStartDateStr);
+        if (!isNaN(lateStart.getTime()) && new Date() >= lateStart) {
+          isLateNow = true;
+        }
+      }
+      const standardDeadlineStr = event.standardDeadline || event.regularDeadline || event.registrationDeadline;
+      if (standardDeadlineStr) {
+        const standardDeadline = new Date(standardDeadlineStr);
+        if (!isNaN(standardDeadline.getTime()) && new Date() > standardDeadline) {
+          isLateNow = true;
+        }
+      }
+    }
+
+    const isUSD = (reg.currency || reg.paymentCurrency || '').toUpperCase() === 'USD';
+    const perCategoryLateRate = isUSD
+      ? Number(event?.lateFeeUSD || 5)
+      : Number(event?.lateFee || event?.lateRegistrationFee || 500);
+
+    let recalculatedLateFee = 0;
+    if (isLateNow) {
+      const totalAthletes = Array.isArray(reg.athletes) ? reg.athletes.length : 1;
+      let totalCatsCount = 0;
+      (reg.athletes || []).forEach((ath) => {
+        const cLen = (ath.selectedCategories || ath.categories || []).length;
+        totalCatsCount += cLen > 0 ? cLen : 1;
+      });
+      recalculatedLateFee = (totalCatsCount || totalAthletes) * perCategoryLateRate;
+    }
+
+    const baseAmount = Number(reg.baseAmount) || Number(reg.totalAmountDue) || 0;
+    const recalculatedTotalDue = baseAmount + recalculatedLateFee;
+
+    const finalSlip = paymentSlipUrl || slipUrl || req.body.paymentSlip || '';
+    const finalAmountPaid = recalculatedTotalDue;
+
+    reg.registrationStatus = 'under_review';
+    reg.status = 'under_review';
+    reg.paymentStatus = 'Pending';
+    reg.isLateRegistration = isLateNow;
+    reg.lateFee = recalculatedLateFee;
+    reg.totalAmountDue = recalculatedTotalDue;
+    reg.totalAmountPaid = finalAmountPaid;
+    reg.remainingBalance = 0;
+    reg.transactionId = transactionId || 'N/A';
+    reg.paymentDate = paymentDate ? new Date(paymentDate) : new Date();
+    reg.paymentSlipUrl = finalSlip;
+    reg.slipUrl = finalSlip;
+    reg.receiptUrl = finalSlip;
+    reg.proofUrl = finalSlip;
+    reg.paymentProof = finalSlip;
+    reg.paymentSlip = finalSlip;
+    if (paymentOption) reg.paymentOption = paymentOption;
+
+    await reg.save();
+
+    // Now send notification to Admin!
+    try {
+      await Notification.create({
+        title: 'New Team Registration',
+        message: `${req.user.name || 'A team'} has attached payment for tournament registration (${(reg.athletes || []).length} athletes).`,
+        type: 'registration',
+        eventId: reg.eventId,
+        registrationId: reg._id,
+        isRead: false,
+        read: false,
+      });
+    } catch (notifErr) {
+      console.warn('Admin notification skipped:', notifErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment attached successfully! Sent to admin for verification.',
+      data: reg,
+    });
+  } catch (err) {
+    console.error('Attach payment error:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
