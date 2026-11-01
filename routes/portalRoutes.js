@@ -266,7 +266,8 @@ router.post('/registrations', protect, async (req, res) => {
       req.body.isDraft === 'true' ||
       paymentOption === 'pay_later' ||
       paymentOption === 'draft' ||
-      req.body.registrationStatus === 'draft';
+      req.body.registrationStatus === 'draft' ||
+      req.body.status === 'draft';
 
     const finalSlip = paymentSlipUrl || slipUrl || req.body.paymentSlip || '';
 
@@ -282,7 +283,7 @@ router.post('/registrations', protect, async (req, res) => {
       totalAthletes: sanitizedAthletes.length,
       athletesCount: sanitizedAthletes.length,
       athletes: sanitizedAthletes,
-      paymentOption: paymentOption || 'full',
+      paymentOption: isDraft ? 'full' : (paymentOption || 'full'),
       isLateRegistration: Boolean(isLateRegistration),
       baseAmount: Number(baseAmount) || 0,
       lateFee: Number(lateFee) || 0,

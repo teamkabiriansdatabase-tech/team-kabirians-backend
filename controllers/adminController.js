@@ -139,7 +139,7 @@ exports.getAdminDashboard = async (req, res) => {
   try {
     const [events, rawRegistrations, categories, results] = await Promise.all([
       Event.find().sort({ eventDate: 1 }).lean(),
-      Registration.find({ registrationStatus: { $ne: 'draft' } })
+      Registration.find({ registrationStatus: { $ne: 'draft' }, paymentStatus: { $ne: 'unpaid' } })
         .populate('userId', 'name email phone phoneNumber teamName')
         .populate('eventId', 'title eventDate eventType status standardDeadline isResultsPublished')
         .sort({ createdAt: -1 })
@@ -226,7 +226,7 @@ exports.getAdminDashboard = async (req, res) => {
 exports.getNotifications = async (req, res) => {
   try {
     const Registration = mongoose.models.Registration || mongoose.model('Registration', new mongoose.Schema({}, { strict: false }));
-    const recentRegs = await Registration.find({ registrationStatus: { $ne: 'draft' } }).sort({ createdAt: -1 }).limit(10).lean();
+    const recentRegs = await Registration.find({ registrationStatus: { $ne: 'draft' }, paymentStatus: { $ne: 'unpaid' } }).sort({ createdAt: -1 }).limit(10).lean();
 
     const notifications = recentRegs.map((reg, idx) => ({
       _id: reg._id || idx,
@@ -273,10 +273,11 @@ exports.getEventCategories = async (req, res) => {
                 { event: new mongoose.Types.ObjectId(String(eventId)) },
               ],
               registrationStatus: { $ne: 'draft' },
+              paymentStatus: { $ne: 'unpaid' },
               _discard: [
               ],
             }
-          : { registrationStatus: { $ne: 'draft' } }
+          : { registrationStatus: { $ne: 'draft' }, paymentStatus: { $ne: 'unpaid' } }
       ).lean(),
     ]);
 
@@ -384,7 +385,7 @@ exports.getEventRegistrations = async (req, res) => {
       };
     }
 
-    const registrations = await Registration.find({ ...query, registrationStatus: { $ne: 'draft' } })
+    const registrations = await Registration.find({ ...query, registrationStatus: { $ne: 'draft' }, paymentStatus: { $ne: 'unpaid' } })
       .populate('userId', 'name email phone phoneNumber teamName')
       .populate('eventId', 'title eventDate eventType status standardDeadline')
       .sort({ createdAt: -1 })
@@ -546,7 +547,7 @@ exports.getPayments = async (req, res) => {
       };
     }
 
-    const registrations = await Registration.find({ ...query, registrationStatus: { $ne: 'draft' } })
+    const registrations = await Registration.find({ ...query, registrationStatus: { $ne: 'draft' }, paymentStatus: { $ne: 'unpaid' } })
       .populate('userId', 'name email phone teamName')
       .populate('eventId', 'title eventDate')
       .sort({ createdAt: -1 })
