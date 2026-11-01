@@ -290,7 +290,7 @@ router.post('/registrations', protect, async (req, res) => {
       totalAmountPaid: isDraft ? 0 : finalAmountPaid,
       remainingBalance: isDraft ? finalTotalDue : finalRemaining,
       transactionId: transactionId || (isDraft ? 'DRAFT' : 'N/A'),
-      paymentDate: paymentDate ? new Date(paymentDate) : isDraft ? null : new Date(),
+      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       paymentSlipUrl: finalSlip,
       slipUrl: finalSlip,
       receiptUrl: finalSlip,

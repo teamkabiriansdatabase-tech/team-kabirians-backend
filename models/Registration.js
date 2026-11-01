@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 
 const registrationSchema = new mongoose.Schema(
   {
-    eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
-    teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    eventId: { type: mongoose.Schema.Types.Mixed, ref: 'Event', required: true },
+    teamId: { type: mongoose.Schema.Types.Mixed, ref: 'Team' },
+    userId: { type: mongoose.Schema.Types.Mixed, ref: 'User', required: true },
 
     teamName: { type: String },
     coachName: { type: String },
@@ -17,7 +17,7 @@ const registrationSchema = new mongoose.Schema(
     athletes: [
       {
         name: { type: String, required: true },
-        gender: { type: String, enum: ['Male', 'Female', 'male', 'female'], default: 'Male' },
+        gender: { type: String, default: 'Male' },
         age: { type: Number },
         cnic: { type: String },
         cnicOrBForm: { type: String },
@@ -27,10 +27,10 @@ const registrationSchema = new mongoose.Schema(
         belt: { type: String, default: 'white' },
         categoryName: { type: String },
         selectedCategories: [
-          { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+          { type: mongoose.Schema.Types.Mixed },
         ],
         categories: [
-          { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+          { type: mongoose.Schema.Types.Mixed },
         ],
         // Persistent video links
         videoUrl: { type: String, default: '' },
@@ -43,22 +43,22 @@ const registrationSchema = new mongoose.Schema(
 
     totalAthletes: { type: Number, default: 0 },
     athletesCount: { type: Number, default: 0 },
-    categories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }],
+    categories: [{ type: mongoose.Schema.Types.Mixed }],
 
     // Payment Details
-    paymentOption: { type: String, enum: ['full', 'half', 'pay_later', 'draft'], default: 'full' },
+    paymentOption: { type: String, default: 'full' },
     totalAmountDue: { type: Number, default: 0 },
     totalAmountPaid: { type: Number, default: 0 },
     remainingBalance: { type: Number, default: 0 },
 
     // Payment Slips & Proofs
-    transactionId: { type: String, default: '' },
-    paymentDate: { type: Date },
-    paymentSlipUrl: { type: String },
-    slipUrl: { type: String },
-    receiptUrl: { type: String },
-    proofUrl: { type: String },
-    paymentProofUrl: { type: String },
+    transactionId: { type: String, default: 'DRAFT' },
+    paymentDate: { type: Date, default: Date.now },
+    paymentSlipUrl: { type: String, default: '' },
+    slipUrl: { type: String, default: '' },
+    receiptUrl: { type: String, default: '' },
+    proofUrl: { type: String, default: '' },
+    paymentProofUrl: { type: String, default: '' },
 
     // Secondary / Remaining Payment Slips
     remainingSlipUrl: { type: String },
@@ -71,7 +71,6 @@ const registrationSchema = new mongoose.Schema(
 
     registrationStatus: {
       type: String,
-      enum: ['draft', 'pending', 'under_review', 'pending_payment', 'approved', 'rejected'],
       default: 'under_review',
     },
     status: { type: String, default: 'under_review' },
