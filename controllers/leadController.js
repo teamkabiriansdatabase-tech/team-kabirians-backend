@@ -19,13 +19,14 @@ exports.submitContactMessage = async (req, res) => {
 
     const lead = await FreeClassLead.create({ name, email, subject, message, source: 'contact', phone: '' });
     if (process.env.SMTP_USER && process.env.ADMIN_EMAIL) {
-      try {
-        await sendContactNotification(lead);
-        lead.emailSentToAdmin = true;
-        await lead.save();
-      } catch (mailError) {
-        console.error('Contact notification failed, but the message was saved:', mailError.message);
-      }
+      sendContactNotification(lead)
+        .then(async () => {
+          lead.emailSentToAdmin = true;
+          await lead.save();
+        })
+        .catch((mailError) => {
+          console.error('Contact notification failed in background:', mailError.message);
+        });
     }
     return res.status(201).json({ success: true, message: 'Your message has been received.', data: { id: lead._id } });
   } catch (error) {
@@ -52,9 +53,6 @@ exports.submitFreeClassLead = async (req, res) => {
     if (name.length > 100 || email.length > 254 || phone.length > 30 || !emailPattern.test(email) || !Number.isInteger(age) || age < 3 || age > 100) {
       return res.status(400).json({ success: false, message: 'Please check the name, age, phone, and email fields and try again.' });
     }
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.ADMIN_EMAIL) {
-      return res.status(503).json({ success: false, message: 'Free class requests are temporarily unavailable. Please try again later.' });
-    }
 
     const lead = await FreeClassLead.create({
       name,
@@ -65,17 +63,17 @@ exports.submitFreeClassLead = async (req, res) => {
       emailSentToAdmin: false,
     });
 
-    try {
-      await sendFreeClassNotification(lead);
-      lead.emailSentToAdmin = true;
-      await lead.save();
-    } catch (mailError) {
-      console.error('Free class email dispatch failed:', mailError.message);
-      return res.status(502).json({
-        success: false,
-        message: 'Your request was saved, but we could not email it just now. Please try again or contact the team.',
-        data: { id: lead._id, emailSentToAdmin: false },
-      });
+    // Send email to admin asynchronously in background so visitor never experiences latency or timeout
+    if (process.env.SMTP_USER && process.env.ADMIN_EMAIL) {
+      sendFreeClassNotification(lead)
+        .then(async () => {
+          lead.emailSentToAdmin = true;
+          await lead.save();
+          console.log(`[Email] Free class notification sent to admin for ${lead.name}`);
+        })
+        .catch((mailError) => {
+          console.error('[Email] Free class email dispatch failed:', mailError.message);
+        });
     }
 
     return res.status(201).json({
@@ -84,6 +82,7 @@ exports.submitFreeClassLead = async (req, res) => {
       data: { id: lead._id, name: lead.name, emailSentToAdmin: true },
     });
   } catch (error) {
+    console.error('submitFreeClassLead Error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
